@@ -3,7 +3,7 @@ name: Daily Fund Limit Monitor
 on:
   schedule:
     # 国际标准时间 (UTC) 05:30 是北京时间 13:30
-    - cron: '30 5 * * *'
+    - cron: '30 5 * * 1-5'
   workflow_dispatch: # 允许你手动点击运行测试
 
 jobs:
@@ -26,6 +26,7 @@ jobs:
         env:
           # 从保险箱取出 Webhook 链接交给程序
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          TZ: Asia/Shanghai
         run: python monitor.py
 
       - name: Commit history
