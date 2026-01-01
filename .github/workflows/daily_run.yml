@@ -1,0 +1,37 @@
+name: Daily Fund Limit Monitor
+
+on:
+  schedule:
+    # 国际标准时间 (UTC) 05:30 是北京时间 13:30
+    - cron: '30 5 * * *'
+  workflow_dispatch: # 允许你手动点击运行测试
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          # 从保险箱取出 Webhook 链接交给程序
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: python monitor.py
+
+      - name: Commit history
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add history.json
+          git commit -m "Update history [skip ci]" || echo "No changes to commit"
+          git push
