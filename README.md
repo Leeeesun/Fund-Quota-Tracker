@@ -1,69 +1,73 @@
-# Fund Limit Monitor (基金限额监控)
+# Fund Limit Monitor (基金申购限额监控)
 
-此项目用于监控指定 QDII 基金（如纳斯达克 100、标普 500）的单日申购限额，并通过企业微信机器人发送通知。
+本项目是一个功能强大的基金监控工具，专注于自动追踪 QDII 基金（如纳斯达克 100、标普 500 等）的单日申购限额变化。它能自动更新监控名单，并每天为您发送一份排版精美、带有涨跌对比的 HTML 数据报表。
 
-## 功能
+## 🌟 核心特性
 
-- 爬取天天基金网的基金详情数据。
-- 提取“交易状态”和“单日限额”信息。
-- 生成日报并通过 邮件（优先）或 企业微信 推送。
-- 支持 HTML 格式邮件，阅读体验更佳。
+- **专业报表**：发送响应式 HTML 邮件，采用现代化表格布局，支持手机端完美阅读。
+- **变动追踪**：自动对比前一交易日数据，用 **绿色 ↑** 或 **红色 ↓** 直观展示限额提升或缩减。
+- **智能过滤**：自动识别基金类型，将纳指、标普 500 及其他类目分门别类展示。
+- **全自动维护**：集成 `akshare` 接口，每月自动扫描全市场，更新标普 500 和纳指相关的新发/存量基金监控列表。
+- **高可靠性**：内置 3 次重试机制、30 秒超时控制以及随机 User-Agent，确保在 GitHub Actions 环境下稳定运行。
+- **双通知通道**：首选精美邮件推送，同时兼容企业微信机器人（Markdown 格式）。
 
-## 目录结构
+## 📂 项目结构
 
-```
+```text
 .
-├── config.json       # 配置文件 (需填入监控名单)
-├── monitor.py        # 主程序
-├── history.json      # 历史限额数据 (自动更新)
-└── requirements.txt  # Python依赖
+├── monitor.py           # 主监控程序：数据爬取、报表生成及发送
+├── update_funds.py      # 自动更新脚本：使用 akshare 维护监控名单
+├── config.json          # 配置文件：存储 API 配置及基金名单（自动维护）
+├── history.json         # 状态管理：存储昨日限额用于对比变化
+├── requirements.txt     # 项目依赖
+└── .github/workflows/   # 自动化流程 (每日监控 + 每月更新)
 ```
 
-## 安装与配置
+## 🚀 快速开始
 
-1. **安装依赖**
+### 1. 自动化部署 (推荐)
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+直接在 GitHub 仓库中配置以下 **Secrets**，即可实现每日定时运行：
 
-2. **配置通知方式**
+| Secret 名称 | 说明 | 示例 |
+| :--- | :--- | :--- |
+| `EMAIL_SENDER` | 发信人邮箱地址 | `invest_monitor@qq.com` |
+| `EMAIL_PASSWORD` | SMTP 授权码 (非登录密码) | `abcd1234efgh5678` |
+| `SMTP_SERVER` | SMTP 服务器地址 | `smtp.qq.com` |
+| `SMTP_PORT` | SMTP 端口 (通常为 465 或 587) | `465` |
+| `EMAIL_RECEIVER` | 收件人邮箱 (支持多个，逗号分隔) | `my@me.com, user@work.com` |
 
-   您可以选择使用邮件推送（推荐）或企业微信机器人。程序会优先检查邮件配置。
+> [!TIP]
+> **GitHub Actions 调度：**
+> - **每日日报**：北京时间 13:30 自动发送监控报表。
+> - **每月更新**：每月 1 号自动同步天天基金网最新的监控名单。
 
-   ### 邮件推送配置 (推荐)
-   为了安全，建议将以下配置通过 **GitHub Secrets** 输入（见下文），但在本地测试时可以在环境变量中设置：
-
-   - `EMAIL_SENDER`: 发信邮箱 (如 `your_email@qq.com`)
-   - `EMAIL_USER`: SMTP 账号 (通常与发信邮箱一致)
-   - `EMAIL_PASSWORD`: SMTP 授权码 (非登录密码，需在邮箱设置中开启 SMTP 获取)
-   - `SMTP_SERVER`: SMTP 服务器地址 (如 `smtp.qq.com`)
-   - `SMTP_PORT`: SMTP 端口 (SSL 通常使用 `465`, TLS 使用 `587`)
-   - `EMAIL_RECEIVER`: 收件人邮箱 (支持多个，用逗号分隔，如 `a@me.com, b@me.com`)
-
-   ### 企业微信配置
-   打开 `config.json`，将 `webhook_url` 替换为您企业微信机器人的真实地址。
-
-## 运行
-
-**手动运行测试：**
+### 2. 本地开发与测试
 
 ```bash
-python3 monitor.py
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 定时更新监控列表 (可选)
+python update_funds.py
+
+# 3. 运行监控并查看输出
+python monitor.py
 ```
 
-正常情况下，您会在终端看到输出（如果没有配置通知方式），或者收到邮件/推送消息。
+## 📊 邮件预览
 
-## GitHub Actions 自动运行
+邮件包含以下信息：
+- **基金名称 & 代码**：清晰标识目标基金。
+- **当前状态**：实时显示“开放”、“暂停”等交易状态。
+- **今日限额**：精准展示当日最高申购金额。
+- **较上日变化**：直观展示限额增加（↑）、减少（↓）或稳定（-）。
 
-本项目已配置 GitHub Actions，每天在北京时间 13:30 (UTC 05:30) 自动运行。
+## ⚠️ 注意事项
 
-**配置步骤：**
-1. 进入 GitHub 仓库设置：`Settings` -> `Secrets and variables` -> `Actions`。
-2. 点击 `New repository secret`，依次添加上述邮件推送所需的变量（`EMAIL_SENDER`, `EMAIL_PASSWORD` 等）。
-3. 如果使用企业微信，添加 `WEBHOOK_URL` 变量。
+1. **数据来源**：数据抓取自天天基金网公开页面，仅供个人学习和交流使用，请勿用于商业用途。
+2. **抓取频率**：GitHub Actions 的调度频率已优化，请避免在本地高频循环运行，以免 IP 被暂时屏蔽。
+3. **隐私安全**：请务必使用 GitHub Secrets 存储敏感配置，切勿在 `config.json` 中明文记录密码。
 
-## 注意事项
-
-- 脚本依赖天天基金网的页面结构，如果网站改版可能会失效。
-- 请适度控制抓取频率，避免被封禁 IP。
+---
+*Created with ❤️ for smart investors.*
