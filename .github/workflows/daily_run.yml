@@ -24,8 +24,15 @@ jobs:
 
       - name: Run script
         env:
-          # 从保险箱取出 Webhook 链接交给程序
+          # WeChat Webhook (Optional)
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          # Email Configuration (Secrets)
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
           TZ: Asia/Shanghai
         run: python monitor.py
 

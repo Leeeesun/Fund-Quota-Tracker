@@ -4,6 +4,10 @@ import json
 import time
 import re
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import markdown
 
 class FundMonitor:
     CONFIG_FILE = 'config.json'
@@ -12,7 +16,18 @@ class FundMonitor:
     def __init__(self):
         self.config = self._load_json(self.CONFIG_FILE)
         self.history = self._load_json(self.HISTORY_FILE)
+        
+        # WeChat Webhook (Backward compatibility)
         self.webhook_url = os.environ.get('WEBHOOK_URL') or self.config.get('webhook_url')
+        
+        # Email Configuration (Securely from environment variables)
+        self.email_sender = os.environ.get('EMAIL_SENDER')
+        self.email_user = os.environ.get('EMAIL_USER') or self.email_sender
+        self.email_password = os.environ.get('EMAIL_PASSWORD')
+        self.smtp_server = os.environ.get('SMTP_SERVER')
+        self.smtp_port = os.environ.get('SMTP_PORT')
+        self.email_receiver = os.environ.get('EMAIL_RECEIVER') # Supports comma-separated list
+        
         self.funds_config = self.config.get('funds', [])
         
     def _load_json(self, filename):
@@ -114,11 +129,63 @@ class FundMonitor:
         return info
 
     def send_notification(self, message):
-        if not self.webhook_url or "YOUR_WECHAT" in self.webhook_url:
-            print("Warning: Webhook URL not configured. Printing message instead.")
-            print(message)
-            return
+        """Send notification via Email (preferred) or WeChat Webhook."""
+        sent_email = False
+        if self.email_sender and self.email_password and self.smtp_server and self.email_receiver:
+            sent_email = self._send_email(message)
+        
+        # If email fails or is not configured, try WeChat
+        if not sent_email:
+            if self.webhook_url and "YOUR_WECHAT" not in self.webhook_url:
+                self._send_wechat(message)
+            else:
+                print("Warning: No notification method configured. Printing message instead.")
+                print(message)
 
+    def _send_email(self, content_md):
+        """Send notification via SMTP Email."""
+        try:
+            receivers = [r.strip() for r in self.email_receiver.split(',') if r.strip()]
+            if not receivers:
+                return False
+
+            # Convert Markdown to HTML
+            html_content = markdown.markdown(content_md)
+            
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = '基金申购限额日报'
+            msg['From'] = self.email_sender
+            msg['To'] = ", ".join(receivers)
+
+            # Plain text version for fallback
+            text_part = MIMEText(content_md, 'plain', 'utf-8')
+            # HTML version
+            html_part = MIMEText(html_content, 'html', 'utf-8')
+
+            msg.attach(text_part)
+            msg.attach(html_part)
+
+            # Connect and send
+            port = int(self.smtp_port) if self.smtp_port else 465
+            if port == 465:
+                server = smtplib.SMTP_SSL(self.smtp_server, port)
+            else:
+                server = smtplib.SMTP(self.smtp_server, port)
+                server.starttls()
+            
+            server.login(self.email_user, self.email_password)
+            server.sendmail(self.email_sender, receivers, msg.as_string())
+            server.quit()
+            
+            print(f"Email notification sent to {len(receivers)} receiver(s).")
+            return True
+        except Exception as e:
+            print(f"Failed to send email notification: {e}")
+            return False
+
+    def _send_wechat(self, message):
+        """Send notification via WeChat Webhook."""
         headers = {'Content-Type': 'application/json'}
         data = {
             "msgtype": "markdown",
@@ -127,9 +194,9 @@ class FundMonitor:
         
         try:
             resp = requests.post(self.webhook_url, json=data, headers=headers)
-            print(f"Notification sent. Status: {resp.status_code}")
+            print(f"WeChat notification sent. Status: {resp.status_code}")
         except Exception as e:
-            print(f"Failed to send notification: {e}")
+            print(f"Failed to send WeChat notification: {e}")
 
     def generate_report(self, funds_data):
         # Sort by limit value descending

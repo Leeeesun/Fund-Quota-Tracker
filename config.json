@@ -1,5 +1,9 @@
 {
     "webhook_url": "",
+    "email_sender": "",
+    "email_receiver": "",
+    "smtp_server": "",
+    "smtp_port": "465",
     "funds": [
         { "code": "160213", "name": "国泰纳斯达克100(LOF)" },
         { "code": "270042", "name": "广发纳斯达克100ETF联接A" },
