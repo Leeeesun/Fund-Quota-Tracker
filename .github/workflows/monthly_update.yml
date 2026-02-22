@@ -1,0 +1,32 @@
+name: Monthly Fund List Update
+
+on:
+  schedule:
+    # 每月1号 UTC 0点 (北京时间 8点)
+    - cron: '0 0 1 * *'
+  workflow_dispatch: # 允许手动触发测试
+
+jobs:
+  update-list:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run update script
+        run: python update_funds.py
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "github-actions[bot]"
+          git diff --quiet config.json || (git add config.json && git commit -m "Auto-update fund list [skip ci]" && git push)

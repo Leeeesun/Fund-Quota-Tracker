@@ -80,8 +80,9 @@ class FundMonitor:
 
     def fetch_fund_info(self, code, name):
         url = f"http://fund.eastmoney.com/f10/jbgk_{code}.html"
+        # Modern Browser User-Agent
         headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         }
         
         info = {
@@ -92,47 +93,59 @@ class FundMonitor:
             "limit_val": -1 
         }
 
-        try:
-            resp = requests.get(url, headers=headers, timeout=10)
-            resp.encoding = "utf-8"
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            full_text = soup.get_text()
-            
-            # 1. Status
-            status_match = re.search(r"交易状态：\s*(\S+)", full_text)
-            if status_match:
-                info['status'] = status_match.group(1)
-            else:
-                th = soup.find(lambda tag: tag.name in ['th', 'td'] and '交易状态' in tag.get_text())
-                if th and th.find_next_sibling('td'):
-                    info['status'] = th.find_next_sibling('td').get_text(strip=True)
+        max_retries = 3
+        retry_delay = 2
+        timeout = 30 # Increased timeout for GitHub Actions
 
-            # 2. Limit Text
-            limit_match = re.search(r"（(.*单日.*上限.*)）", resp.text)
-            if limit_match:
-                 raw_limit = limit_match.group(1)
-                 clean_limit = re.sub(r'<[^>]+>', '', raw_limit)
-                 info['limit_text'] = re.sub(r"单日.*?上限", "", clean_limit).replace("（", "").replace("）", "")
-            
-            # 3. Numeric Value
-            if "暂停" in info['status']:
-                info['limit_val'] = -1
-            elif info['limit_text'] != "None":
-                info['limit_val'] = self._parse_amount(info['limit_text'])
-            else:
-                info['limit_val'] = float('inf')
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, headers=headers, timeout=timeout)
+                resp.encoding = "utf-8"
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                full_text = soup.get_text()
+                
+                # 1. Status
+                status_match = re.search(r"交易状态：\s*(\S+)", full_text)
+                if status_match:
+                    info['status'] = status_match.group(1)
+                else:
+                    th = soup.find(lambda tag: tag.name in ['th', 'td'] and '交易状态' in tag.get_text())
+                    if th and th.find_next_sibling('td'):
+                        info['status'] = th.find_next_sibling('td').get_text(strip=True)
 
-        except Exception as e:
-            print(f"Error fetching {code}: {e}")
+                # 2. Limit Text
+                limit_match = re.search(r"（(.*单日.*上限.*)）", resp.text)
+                if limit_match:
+                     raw_limit = limit_match.group(1)
+                     clean_limit = re.sub(r'<[^>]+>', '', raw_limit)
+                     info['limit_text'] = re.sub(r"单日.*?上限", "", clean_limit).replace("（", "").replace("）", "")
+                
+                # 3. Numeric Value
+                if "暂停" in info['status']:
+                    info['limit_val'] = -1
+                elif info['limit_text'] != "None":
+                    info['limit_val'] = self._parse_amount(info['limit_text'])
+                else:
+                    info['limit_val'] = float('inf')
+                
+                # Success, break retry loop
+                break
+
+            except (requests.exceptions.RequestException, Exception) as e:
+                print(f"Error fetching {code} (Attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    print(f"Failed to fetch {code} after {max_retries} attempts.")
             
         return info
 
-    def send_notification(self, message):
+    def send_notification(self, message, html_message=None):
         """Send notification via Email (preferred) or WeChat Webhook."""
         sent_email = False
         if self.email_sender and self.email_password and self.smtp_server and self.email_receiver:
-            sent_email = self._send_email(message)
+            sent_email = self._send_email(message, html_message)
         
         # If email fails or is not configured, try WeChat
         if not sent_email:
@@ -142,15 +155,16 @@ class FundMonitor:
                 print("Warning: No notification method configured. Printing message instead.")
                 print(message)
 
-    def _send_email(self, content_md):
+    def _send_email(self, content_md, content_html=None):
         """Send notification via SMTP Email."""
         try:
             receivers = [r.strip() for r in self.email_receiver.split(',') if r.strip()]
             if not receivers:
                 return False
 
-            # Convert Markdown to HTML
-            html_content = markdown.markdown(content_md)
+            # Convert Markdown to basic HTML if custom HTML is not provided
+            if not content_html:
+                content_html = markdown.markdown(content_md)
             
             # Create message
             msg = MIMEMultipart('alternative')
@@ -161,7 +175,7 @@ class FundMonitor:
             # Plain text version for fallback
             text_part = MIMEText(content_md, 'plain', 'utf-8')
             # HTML version
-            html_part = MIMEText(html_content, 'html', 'utf-8')
+            html_part = MIMEText(content_html, 'html', 'utf-8')
 
             msg.attach(text_part)
             msg.attach(html_part)
@@ -197,6 +211,120 @@ class FundMonitor:
             print(f"WeChat notification sent. Status: {resp.status_code}")
         except Exception as e:
             print(f"Failed to send WeChat notification: {e}")
+
+    def generate_html_report(self, funds_data):
+        """Generate a modern, responsive HTML report."""
+        # Categorize
+        groups = {
+            "可申购": {"纳斯达克100": [], "标普500": [], "其他": []},
+            "不可申购": {"纳斯达克100": [], "标普500": [], "其他": []}
+        }
+
+        for info in funds_data:
+            is_paused = "暂停" in info['status']
+            category = "不可申购" if (is_paused or info['limit_val'] == 0) else "可申购"
+            idx_type = self._get_index_type(info['name'])
+            groups[category].get(idx_type, groups[category]["其他"]).append(info)
+
+        last_limits = self.history.get('limits', {})
+        now_time = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta charset="utf-8">
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                    <td align="center" style="padding: 20px 0;">
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                            <!-- Header -->
+                            <tr>
+                                <td style="padding: 30px; background-color: #ffffff; border-bottom: 1px solid #edf2f7;">
+                                    <h2 style="margin: 0 0 10px 0; color: #1a202c; font-size: 24px;">基金申购限额日报 (A类)</h2>
+                                    <p style="margin: 0; color: #718096; font-size: 14px;">时间: {now_time}</p>
+                                </td>
+                            </tr>
+        """
+
+        for category, section_data in groups.items():
+            total_count = sum(len(v) for v in section_data.values())
+            if total_count == 0:
+                continue
+
+            bg_color = "#f0fff4" if category == "可申购" else "#fff5f5"
+            border_color = "#38a169" if category == "可申购" else "#e53e3e"
+            title_color = "#2f855a" if category == "可申购" else "#c53030"
+            
+            html += f"""
+                            <!-- Section: {category} -->
+                            <tr>
+                                <td style="padding: 20px 30px; background-color: {bg_color}; border-left: 4px solid {border_color};">
+                                    <h3 style="margin: 0; color: {title_color}; font-size: 18px;">{category}</h3>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px 30px 20px 30px;">
+            """
+
+            for idx_name in ["纳斯达克100", "标普500", "其他"]:
+                funds = section_data.get(idx_name, [])
+                if not funds:
+                    continue
+                
+                html += f"""
+                                    <h4 style="margin: 15px 0 10px 0; color: #4a5568; font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em;">{idx_name}</h4>
+                                    <ul style="margin: 0; padding: 0; list-style: none;">
+                """
+                
+                for f in funds:
+                    s_name = self._shorten_name(f['name'])
+                    code = f['code']
+                    limit_text = f['limit_text']
+                    limit_val = f['limit_val']
+                    
+                    emoji = "🔴" if category == "不可申购" else ""
+                    arrow = ""
+                    prev = last_limits.get(code)
+                    if prev is not None:
+                        if limit_val > prev: arrow = ' <span style="color: #38a169;">↑</span>'
+                        elif limit_val < prev: arrow = ' <span style="color: #e53e3e;">↓</span>'
+
+                    display_limit = ""
+                    if category == "可申购":
+                         if limit_text != "None":
+                             display_limit = f' : <strong style="color: #2d3748;">{limit_text}</strong>'
+                         elif limit_val == float('inf'):
+                             display_limit = ' : <strong style="color: #2d3748;">不限</strong>'
+
+                    html += f"""
+                                        <li style="padding: 8px 0; border-bottom: 1px solid #f7fafc; color: #2d3748; font-size: 15px;">
+                                            <strong>{s_name}</strong> <span style="color: #718096; font-size: 13px;">({code})</span> {emoji} {display_limit}{arrow}
+                                        </li>
+                    """
+                
+                html += "                                    </ul>"
+            
+            html += "                                </td></tr>"
+
+        html += """
+                            <!-- Footer -->
+                            <tr>
+                                <td style="padding: 20px 30px; background-color: #f7fafc; color: #a0aec0; font-size: 12px; text-align: center;">
+                                    此邮件由 Fund Limit Monitor 自动发送
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        """
+        return html
 
     def generate_report(self, funds_data):
         # Sort by limit value descending
@@ -278,7 +406,8 @@ class FundMonitor:
             time.sleep(0.5)
             
         message = self.generate_report(funds_data)
-        self.send_notification(message)
+        html_message = self.generate_html_report(funds_data)
+        self.send_notification(message, html_message)
         
         # Save History
         curr_limits = {f['code']: f['limit_val'] for f in funds_data}
