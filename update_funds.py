@@ -53,17 +53,16 @@ def update_fund_list():
     
     print(f"Filtered funds count: {len(new_funds)}")
 
-    # Load existing config
-    if not os.path.exists(CONFIG_FILE):
-        print(f"Error: {CONFIG_FILE} not found.")
-        return False
-
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except Exception as e:
-        print(f"Error reading config: {e}")
-        return False
+    # Load existing config or create default
+    config = {"funds": []}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except Exception as e:
+            print(f"Error reading {CONFIG_FILE}: {e}. Starting with default structure.")
+    else:
+        print(f"{CONFIG_FILE} not found. Creating a new one.")
 
     # Update only the 'funds' field
     config['funds'] = new_funds
