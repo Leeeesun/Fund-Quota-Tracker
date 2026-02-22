@@ -244,7 +244,7 @@ class FundMonitor:
                             <!-- Header -->
                             <tr>
                                 <td style="padding: 40px 30px; background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);">
-                                    <h2 style="margin: 0 0 8px 0; color: #ffffff; font-size: 28px; font-weight: 700;">基金申购限额日报 (A类)</h2>
+                                    <h2 style="margin: 0 0 8px 0; color: #ffffff; font-size: 28px; font-weight: 700;">基金申购限额日报</h2>
                                     <p style="margin: 0; color: #ebf8ff; font-size: 14px; opacity: 0.9;">更新时间: {now_time}</p>
                                 </td>
                             </tr>
