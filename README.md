@@ -1,73 +1,87 @@
-# Fund Limit Monitor (基金申购限额监控)
+# 📈 Fund-Quota-Tracker | 基金额度追踪器
 
-本项目是一个功能强大的基金监控工具，专注于自动追踪 QDII 基金（如纳斯达克 100、标普 500 等）的单日申购限额变化。它能自动更新监控名单，并每天为您发送一份排版精美、带有涨跌对比的 HTML 数据报表。
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-Automated-2088FF?logo=github-actions)
+![Data Source](https://img.shields.io/badge/Data-AkShare%20%7C%20EastMoney-orange)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## 🌟 核心特性
-
-- **专业报表**：发送响应式 HTML 邮件，采用现代化表格布局，支持手机端完美阅读。
-- **变动追踪**：自动对比前一交易日数据，用 **绿色 ↑** 或 **红色 ↓** 直观展示限额提升或缩减。
-- **智能过滤**：自动识别基金类型，将纳指、标普 500 及其他类目分门别类展示。
-- **全自动维护**：集成 `akshare` 接口，每月自动扫描全市场，更新标普 500 和纳指相关的新发/存量基金监控列表。
-- **高可靠性**：内置 3 次重试机制、30 秒超时控制以及随机 User-Agent，确保在 GitHub Actions 环境下稳定运行。
-- **双通知通道**：首选精美邮件推送，同时兼容企业微信机器人（Markdown 格式）。
-
-## 📂 项目结构
-
-```text
-.
-├── monitor.py           # 主监控程序：数据爬取、报表生成及发送
-├── update_funds.py      # 自动更新脚本：使用 akshare 维护监控名单
-├── config.json          # 配置文件：存储 API 配置及基金名单（自动维护）
-├── history.json         # 状态管理：存储昨日限额用于对比变化
-├── requirements.txt     # 项目依赖
-└── .github/workflows/   # 自动化流程 (每日监控 + 每月更新)
-```
-
-## 🚀 快速开始
-
-### 1. 自动化部署 (推荐)
-
-直接在 GitHub 仓库中配置以下 **Secrets**，即可实现每日定时运行：
-
-| Secret 名称 | 说明 | 示例 |
-| :--- | :--- | :--- |
-| `EMAIL_SENDER` | 发信人邮箱地址 | `invest_monitor@qq.com` |
-| `EMAIL_PASSWORD` | SMTP 授权码 (非登录密码) | `abcd1234efgh5678` |
-| `SMTP_SERVER` | SMTP 服务器地址 | `smtp.qq.com` |
-| `SMTP_PORT` | SMTP 端口 (通常为 465 或 587) | `465` |
-| `EMAIL_RECEIVER` | 收件人邮箱 (支持多个，逗号分隔) | `my@me.com, user@work.com` |
-
-> [!TIP]
-> **GitHub Actions 调度：**
-> - **每日日报**：北京时间 13:30 自动发送监控报表。
-> - **每月更新**：每月 1 号自动同步天天基金网最新的监控名单。
-
-### 2. 本地开发与测试
-
-```bash
-# 1. 安装依赖
-pip install -r requirements.txt
-
-# 2. 定时更新监控列表 (可选)
-python update_funds.py
-
-# 3. 运行监控并查看输出
-python monitor.py
-```
-
-## 📊 邮件预览
-
-邮件包含以下信息：
-- **基金名称 & 代码**：清晰标识目标基金。
-- **当前状态**：实时显示“开放”、“暂停”等交易状态。
-- **今日限额**：精准展示当日最高申购金额。
-- **较上日变化**：直观展示限额增加（↑）、减少（↓）或稳定（-）。
-
-## ⚠️ 注意事项
-
-1. **数据来源**：数据抓取自天天基金网公开页面，仅供个人学习和交流使用，请勿用于商业用途。
-2. **抓取频率**：GitHub Actions 的调度频率已优化，请避免在本地高频循环运行，以免 IP 被暂时屏蔽。
-3. **隐私安全**：请务必使用 GitHub Secrets 存储敏感配置，切勿在 `config.json` 中明文记录密码。
+> **A powerful, fully automated tracker for QDII funds (S&P 500, Nasdaq 100) purchase limits.** > 一个强大、全自动的 QDII 基金（标普 500、纳斯达克 100）单日申购限额监控工具。
 
 ---
-*Created with ❤️ for smart investors.*
+
+## 📖 Introduction | 项目简介
+
+**Fund-Quota-Tracker** is designed for smart investors who trade cross-border ETFs and OTC QDII funds. Due to foreign exchange quota limits, popular funds often restrict or suspend daily purchases. This tool completely automates the monitoring process, keeping you informed of any quota changes. 
+
+本项目专为经常进行跨境 ETF 和场外 QDII 基金交易的投资者设计。由于外汇额度限制，热门美股指数基金经常限制单日申购额度甚至暂停申购。本工具将监控流程彻底自动化，让您第一时间掌握额度放开或收紧的动态。
+
+---
+
+## ✨ Key Features | 核心亮点
+
+* 🤖 **Fully Automated (全自动运行)**: Powered by GitHub Actions. Zero server costs, zero manual maintenance. (基于 GitHub Actions，零服务器成本，免维护)。
+* 📊 **Smart Trend Tracking (智能趋势对比)**: Automatically compares today's limits with yesterday's. Up/Down arrows and color codes intuitively show if quotas are expanding or tightening. (自动对比前一交易日数据，使用红绿箭头直观展示限额是放开还是收紧)。
+* 📧 **Rich HTML Reports (精美 HTML 报表)**: Delivers a clean, responsive, and mobile-friendly HTML data table directly to your inbox. (发送排版精美、适配手机端的响应式 HTML 邮件报表)。
+* 🔄 **Self-Updating Roster (自我进化)**: Integrates with `AkShare` to automatically scan the entire market every month and update the watchlist with newly issued S&P/Nasdaq funds. (集成 AkShare 接口，每月自动扫描全市场，将新发行的标普/纳指基金补充进监控名单)。
+* 💬 **Multi-Channel (多通道通知)**: Prefers Email notifications but fully supports WeChat Work Bots. (首选邮件推送，同时保留企业微信机器人支持)。
+
+---
+
+## 🚀 Quick Start | 快速部署
+
+You don't need to know how to code. Just follow these steps to deploy your own tracker:  
+无需任何编程基础，按以下步骤即可拥有你自己的监控机器人：
+
+### 1. Fork this repository (复刻本项目)
+Click the `Fork` button at the top right of this page to copy it to your own GitHub account.  
+点击页面右上角的 `Fork` 按钮，将项目复制到您的账号下。
+
+### 2. Configure Secrets (配置环境变量)
+Go to your repository **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**. Add the following variables:  
+进入仓库的 **Settings** -> **Secrets and variables** -> **Actions**，添加以下密钥：
+
+| Secret Name (变量名) | Example / Description (示例及说明) |
+| :--- | :--- |
+| `EMAIL_SENDER` | Your email address (e.g., `invest_bot@outlook.com`) |
+| `EMAIL_PASSWORD` | App Password / SMTP Auth Code (NOT your login password) |
+| `SMTP_SERVER` | e.g., `smtp-mail.outlook.com` or `smtp.qq.com` |
+| `SMTP_PORT` | Usually `587` (TLS) or `465` (SSL) |
+| `EMAIL_RECEIVER` | Where to receive reports (e.g., `your_email@qq.com`) |
+
+### 3. Grant Write Permissions (开启写入权限)
+To allow the monthly auto-update script to save data, go to **Settings** -> **Actions** -> **General** -> **Workflow permissions**, and select **`Read and write permissions`**.  
+为了让每月的自动更新脚本能够保存最新基金名单，请进入 **Settings** -> **Actions** -> **General** -> **Workflow permissions**，勾选 **`Read and write permissions`**。
+
+### 4. Enable Workflows (激活自动化工作流)
+Go to the **Actions** tab, click `I understand my workflows, go ahead and enable them`.  
+进入 **Actions** 标签页，点击允许运行工作流。你可以手动点击 `Run workflow` 立即测试一次！
+
+---
+
+## 📈 Preview | 报表预览
+
+*(You can replace this section with a screenshot of your actual beautiful HTML email)* *(你可以稍后截一张你收到的精美 HTML 邮件图，将图片上传到 GitHub Issue 里，然后替换到这里)*
+
+<details>
+<summary>Click to view HTML Email Example (点击查看邮件报表示例)</summary>
+
+**[ 🟢 可申购 Available ]**
+* **Fund A (01xxxx)**: 100元 -> <span style="color:green">**↑ 500元**</span>
+* **Fund B (02xxxx)**: 50元 -> <span style="color:gray">**- 无变化**</span>
+
+**[ 🔴 暂停申购 Unavailable ]**
+* **Fund C (03xxxx)**: 50元 -> <span style="color:red">**↓ 暂停申购**</span>
+
+</details>
+
+---
+
+## ⚠️ Disclaimer | 免责声明
+
+* **For Educational Purposes Only**: This tool scrapes public data from EastMoney (天天基金网). It is intended for personal study and reference, not for commercial use. 
+* **Not Financial Advice**: The data provided by this tool does not constitute investment advice. Users should verify limits on their trading platforms before making transactions.
+* **仅供学习交流**：本项目抓取天天基金网公开数据，仅供个人学习和参考，请勿用于高频商业爬虫。工具提供的数据不构成任何投资建议，交易前请以券商实际交易界面的额度为准。
+
+---
+
+**Made with ❤️ by [Leeeesun](https://github.com/Leeeesun) | If you find this helpful, please give it a ⭐️!**
