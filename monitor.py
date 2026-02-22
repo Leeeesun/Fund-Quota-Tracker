@@ -213,7 +213,7 @@ class FundMonitor:
             print(f"Failed to send WeChat notification: {e}")
 
     def generate_html_report(self, funds_data):
-        """Generate a modern, responsive HTML report."""
+        """Generate a modern, responsive HTML report with a table and delta tracking."""
         # Categorize
         groups = {
             "可申购": {"纳斯达克100": [], "标普500": [], "其他": []},
@@ -236,16 +236,16 @@ class FundMonitor:
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <meta charset="utf-8">
         </head>
-        <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+        <body style="margin: 0; padding: 0; background-color: #f4f7f9; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
             <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
                     <td align="center" style="padding: 20px 0;">
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 800px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
                             <!-- Header -->
                             <tr>
-                                <td style="padding: 30px; background-color: #ffffff; border-bottom: 1px solid #edf2f7;">
-                                    <h2 style="margin: 0 0 10px 0; color: #1a202c; font-size: 24px;">基金申购限额日报 (A类)</h2>
-                                    <p style="margin: 0; color: #718096; font-size: 14px;">时间: {now_time}</p>
+                                <td style="padding: 40px 30px; background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);">
+                                    <h2 style="margin: 0 0 8px 0; color: #ffffff; font-size: 28px; font-weight: 700;">基金申购限额日报 (A类)</h2>
+                                    <p style="margin: 0; color: #ebf8ff; font-size: 14px; opacity: 0.9;">更新时间: {now_time}</p>
                                 </td>
                             </tr>
         """
@@ -255,19 +255,18 @@ class FundMonitor:
             if total_count == 0:
                 continue
 
-            bg_color = "#f0fff4" if category == "可申购" else "#fff5f5"
-            border_color = "#38a169" if category == "可申购" else "#e53e3e"
-            title_color = "#2f855a" if category == "可申购" else "#c53030"
+            section_color = "#38a169" if category == "可申购" else "#e53e3e"
+            section_bg = "#f0fff4" if category == "可申购" else "#fff5f5"
             
             html += f"""
                             <!-- Section: {category} -->
                             <tr>
-                                <td style="padding: 20px 30px; background-color: {bg_color}; border-left: 4px solid {border_color};">
-                                    <h3 style="margin: 0; color: {title_color}; font-size: 18px;">{category}</h3>
+                                <td style="padding: 30px 30px 10px 30px;">
+                                    <h3 style="margin: 0; color: {section_color}; font-size: 20px; border-bottom: 2px solid {section_color}; padding-bottom: 8px; display: inline-block;">{category}</h3>
                                 </td>
                             </tr>
                             <tr>
-                                <td style="padding: 10px 30px 20px 30px;">
+                                <td style="padding: 0 30px 20px 30px;">
             """
 
             for idx_name in ["纳斯达克100", "标普500", "其他"]:
@@ -276,45 +275,72 @@ class FundMonitor:
                     continue
                 
                 html += f"""
-                                    <h4 style="margin: 15px 0 10px 0; color: #4a5568; font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em;">{idx_name}</h4>
-                                    <ul style="margin: 0; padding: 0; list-style: none;">
+                                    <h4 style="margin: 20px 0 12px 0; color: #4a5568; font-size: 16px; font-weight: 600;">{idx_name}</h4>
+                                    <table width="100%" style="border-collapse: collapse; margin-bottom: 10px;">
+                                        <thead>
+                                            <tr style="background-color: #f8fafc; border-bottom: 2px solid #edf2f7;">
+                                                <th align="left" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">基金名称</th>
+                                                <th align="center" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">当前状态</th>
+                                                <th align="right" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">今日限额</th>
+                                                <th align="right" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">较昨日变化</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
                 """
                 
                 for f in funds:
                     s_name = self._shorten_name(f['name'])
                     code = f['code']
+                    status = f['status']
                     limit_text = f['limit_text']
                     limit_val = f['limit_val']
                     
-                    emoji = "🔴" if category == "不可申购" else ""
-                    arrow = ""
-                    prev = last_limits.get(code)
-                    if prev is not None:
-                        if limit_val > prev: arrow = ' <span style="color: #38a169;">↑</span>'
-                        elif limit_val < prev: arrow = ' <span style="color: #e53e3e;">↓</span>'
+                    # Status Styling
+                    status_style = "color: #38a169; font-weight: 600;" if "暂停" not in status else "color: #e53e3e; font-weight: 600;"
+                    
+                    # Comparison Logic
+                    prev_val = last_limits.get(code)
+                    change_html = '<span style="color: #a0aec0;">-</span>'
+                    
+                    if prev_val is not None:
+                        # Normalize values for infinity comparison
+                        v_curr = limit_val if limit_val != float('inf') else 9999999999
+                        v_prev = prev_val if prev_val != float('inf') else 9999999999
+                        
+                        if v_curr > v_prev:
+                            diff = v_curr - v_prev
+                            diff_text = f"+{limit_text}" if v_prev == 0 else f"+{int(diff)}"
+                            if v_curr >= 9999999999: diff_text = "恢复不限额"
+                            change_html = f'<span style="color: #38a169; font-weight: bold;">↑ {diff_text}</span>'
+                        elif v_curr < v_prev:
+                            diff = v_prev - v_curr
+                            diff_text = f"-{int(diff)}" if v_curr != 0 else "进入暂停"
+                            if v_curr == -1: diff_text = "暂停申购"
+                            change_html = f'<span style="color: #e53e3e; font-weight: bold;">↓ {diff_text}</span>'
 
-                    display_limit = ""
-                    if category == "可申购":
-                         if limit_text != "None":
-                             display_limit = f' : <strong style="color: #2d3748;">{limit_text}</strong>'
-                         elif limit_val == float('inf'):
-                             display_limit = ' : <strong style="color: #2d3748;">不限</strong>'
+                    # Display Limit
+                    disp_limit = limit_text if limit_text != "None" else ("不限额" if limit_val == float('inf') else status)
+                    if limit_val == -1: disp_limit = "暂停"
 
                     html += f"""
-                                        <li style="padding: 8px 0; border-bottom: 1px solid #f7fafc; color: #2d3748; font-size: 15px;">
-                                            <strong>{s_name}</strong> <span style="color: #718096; font-size: 13px;">({code})</span> {emoji} {display_limit}{arrow}
-                                        </li>
+                                            <tr style="border-bottom: 1px solid #edf2f7;">
+                                                <td style="padding: 14px 8px; font-size: 14px;"><strong>{s_name}</strong> <br><span style="color: #a0aec0; font-size: 12px;">{code}</span></td>
+                                                <td align="center" style="padding: 14px 8px; font-size: 14px; {status_style}">{status}</td>
+                                                <td align="right" style="padding: 14px 8px; font-size: 14px; font-weight: 600; color: #2d3748;">{disp_limit}</td>
+                                                <td align="right" style="padding: 14px 8px; font-size: 14px;">{change_html}</td>
+                                            </tr>
                     """
                 
-                html += "                                    </ul>"
+                html += "                                        </tbody></table>"
             
             html += "                                </td></tr>"
 
         html += """
                             <!-- Footer -->
                             <tr>
-                                <td style="padding: 20px 30px; background-color: #f7fafc; color: #a0aec0; font-size: 12px; text-align: center;">
-                                    此邮件由 Fund Limit Monitor 自动发送
+                                <td style="padding: 30px; background-color: #f8fafc; border-top: 1px solid #edf2f7; color: #a0aec0; font-size: 12px; text-align: center;">
+                                    <p style="margin: 0 0 5px 0;">此邮件由 <strong>Fund Limit Monitor</strong> 自动发送</p>
+                                    <p style="margin: 0;">数据源: 天天基金网 | 仅供个人参考</p>
                                 </td>
                             </tr>
                         </table>
