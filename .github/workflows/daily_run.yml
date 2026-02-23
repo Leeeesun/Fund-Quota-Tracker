@@ -2,8 +2,8 @@ name: Daily Fund Limit Monitor
 
 on:
   schedule:
-    # 国际标准时间 (UTC) 05:30 是北京时间 13:30
-    - cron: '30 5 * * 1-5'
+    # 国际标准时间 (UTC) 01:45 是北京时间 9:45
+    - cron: '45 1 * * 1-5'
   workflow_dispatch: # 允许你手动点击运行测试
 
 jobs:
