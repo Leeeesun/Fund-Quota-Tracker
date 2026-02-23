@@ -4,6 +4,7 @@ import json
 import time
 import re
 import os
+import random
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -78,24 +79,136 @@ class FundMonitor:
             return "标普500"
         return "其他"
 
-    def fetch_fund_info(self, code, name):
-        url = f"http://fund.eastmoney.com/f10/jbgk_{code}.html"
-        # Modern Browser User-Agent
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-        }
+    def _get_random_ua(self):
+        """Return a randomized modern browser User-Agent string."""
+        ua_list = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+        ]
+        return random.choice(ua_list)
+
+    def fetch_jisilu_qdii_data(self):
+        """Fetch QDII ETF/LOF data in bulk from Jisilu (集思录).
         
+        Returns a dict keyed by fund_id with parsed fund data.
+        Only covers exchange-traded QDII funds (ETFs/LOFs), not OTC share classes.
+        """
+        url = "https://www.jisilu.cn/data/qdii/qdii_list/E"
+        headers = {
+            "User-Agent": self._get_random_ua(),
+            "Referer": "https://www.jisilu.cn/data/qdii/",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+
+        max_retries = 3
+        timeout = 15
+        jisilu_data = {}
+
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, headers=headers, timeout=timeout)
+                resp.raise_for_status()
+                data = resp.json()
+
+                for row in data.get("rows", []):
+                    cell = row.get("cell", {})
+                    fund_id = cell.get("fund_id", "")
+                    if not fund_id:
+                        continue
+
+                    # Parse apply_status: "开放申购", "暂停申购", "限10", "限1000" etc.
+                    apply_status = cell.get("apply_status", "")
+
+                    # Parse discount_rt (premium rate): "5.22%", "-1.5%" etc.
+                    discount_rt_str = cell.get("discount_rt", "")
+                    premium_rate = None
+                    if discount_rt_str and discount_rt_str != "-":
+                        try:
+                            premium_rate = float(discount_rt_str.replace("%", ""))
+                        except (ValueError, TypeError):
+                            premium_rate = None
+
+                    jisilu_data[fund_id] = {
+                        "fund_nm": cell.get("fund_nm", ""),
+                        "apply_status": apply_status,
+                        "premium_rate": premium_rate,
+                        "discount_rt_str": discount_rt_str,
+                        "min_amt": cell.get("min_amt"),
+                    }
+
+                print(f"Jisilu: fetched {len(jisilu_data)} QDII ETF/LOF records.")
+                break
+
+            except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+                print(f"Jisilu fetch error (Attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    print("Failed to fetch Jisilu data. Will fall back to EastMoney for all funds.")
+
+        return jisilu_data
+
+    def fetch_fund_info(self, code, name, jisilu_data=None):
+        """Fetch fund info. Uses Jisilu data if available, otherwise falls back to EastMoney."""
         info = {
             "code": code,
             "name": name,
             "status": "Unknown",
             "limit_text": "None",
-            "limit_val": -1 
+            "limit_val": -1,
+            "premium_rate": None,  # Only available for ETFs from Jisilu
+        }
+
+        # --- Try Jisilu data first (ETFs/LOFs only) ---
+        if jisilu_data and code in jisilu_data:
+            jsl = jisilu_data[code]
+            apply_status = jsl["apply_status"]
+            info["premium_rate"] = jsl["premium_rate"]
+
+            if "暂停" in apply_status:
+                info["status"] = "暂停申购"
+                info["limit_text"] = "None"
+                info["limit_val"] = -1
+            elif apply_status == "开放申购":
+                info["status"] = "开放申购"
+                info["limit_text"] = "None"
+                info["limit_val"] = float('inf')
+            else:
+                # "限10", "限1000" etc.
+                info["status"] = apply_status
+                limit_match = re.search(r"限(\d+(?:\.\d+)?)", apply_status)
+                if limit_match:
+                    limit_num = float(limit_match.group(1))
+                    info["limit_text"] = f"{limit_match.group(1)}元"
+                    info["limit_val"] = int(limit_num)
+                else:
+                    info["limit_text"] = apply_status
+                    info["limit_val"] = 0
+
+            # Use Jisilu's fund name if shorter/better
+            if jsl.get("fund_nm"):
+                info["name"] = jsl["fund_nm"]
+
+            print(f"  [Jisilu] {code} {info['name']}: {apply_status}, 溢价率={jsl['discount_rt_str']}")
+            return info
+
+        # --- Fallback: EastMoney per-fund scraping ---
+        url = f"http://fund.eastmoney.com/f10/jbgk_{code}.html"
+        headers = {
+            "User-Agent": self._get_random_ua()
         }
 
         max_retries = 3
         retry_delay = 2
-        timeout = 30 # Increased timeout for GitHub Actions
+        timeout = 30
 
         for attempt in range(max_retries):
             try:
@@ -283,6 +396,7 @@ class FundMonitor:
                                                 <th align="center" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">当前状态</th>
                                                 <th align="right" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">今日限额</th>
                                                 <th align="right" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">较昨日变化</th>
+                                                <th align="right" style="padding: 12px 8px; font-size: 13px; color: #718096; text-transform: uppercase;">溢价率</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -322,12 +436,27 @@ class FundMonitor:
                     disp_limit = limit_text if limit_text != "None" else ("不限额" if limit_val == float('inf') else status)
                     if limit_val == -1: disp_limit = "暂停"
 
+                    # Premium Rate Styling
+                    premium_rate = f.get('premium_rate')
+                    if premium_rate is not None:
+                        if premium_rate > 1:
+                            pr_style = "color: #e53e3e; font-weight: 600;"
+                        elif premium_rate < 0:
+                            pr_style = "color: #38a169; font-weight: 600;"
+                        else:
+                            pr_style = "color: #2d3748; font-weight: 600;"
+                        pr_display = f"{premium_rate:.2f}%"
+                    else:
+                        pr_style = "color: #a0aec0;"
+                        pr_display = "N/A"
+
                     html += f"""
                                             <tr style="border-bottom: 1px solid #edf2f7;">
                                                 <td style="padding: 14px 8px; font-size: 14px;"><strong>{s_name}</strong> <br><span style="color: #a0aec0; font-size: 12px;">{code}</span></td>
                                                 <td align="center" style="padding: 14px 8px; font-size: 14px; {status_style}">{status}</td>
                                                 <td align="right" style="padding: 14px 8px; font-size: 14px; font-weight: 600; color: #2d3748;">{disp_limit}</td>
                                                 <td align="right" style="padding: 14px 8px; font-size: 14px;">{change_html}</td>
+                                                <td align="right" style="padding: 14px 8px; font-size: 14px; {pr_style}">{pr_display}</td>
                                             </tr>
                     """
                 
@@ -340,7 +469,7 @@ class FundMonitor:
                             <tr>
                                 <td style="padding: 30px; background-color: #f8fafc; border-top: 1px solid #edf2f7; color: #a0aec0; font-size: 12px; text-align: center;">
                                     <p style="margin: 0 0 5px 0;">此邮件由 <strong>Fund Limit Monitor</strong> 自动发送</p>
-                                    <p style="margin: 0;">数据源: 天天基金网 | 仅供个人参考</p>
+                                    <p style="margin: 0;">数据源: 集思录 / 天天基金网 | 仅供个人参考</p>
                                 </td>
                             </tr>
                         </table>
@@ -414,6 +543,11 @@ class FundMonitor:
                         line += f" : {limit_text}{arrow}"
                     elif title == "可申购" and limit_val == float('inf') and arrow:
                         line += f" : 不限{arrow}"
+
+                    # Append premium rate if available
+                    premium_rate = f.get('premium_rate')
+                    if premium_rate is not None:
+                        line += f" [溢价率: {premium_rate:.2f}%]"
                     
                     report_lines.append(line.strip())
 
@@ -425,11 +559,17 @@ class FundMonitor:
     def run(self):
         funds_data = []
         print(f"Fetching data for {len(self.funds_config)} funds...")
+
+        # Fetch Jisilu QDII ETF/LOF data in bulk first
+        print("Fetching Jisilu QDII data...")
+        jisilu_data = self.fetch_jisilu_qdii_data()
         
         for fund in self.funds_config:
-            info = self.fetch_fund_info(fund['code'], fund['name'])
+            info = self.fetch_fund_info(fund['code'], fund['name'], jisilu_data)
             funds_data.append(info)
-            time.sleep(0.5)
+            # Only sleep between EastMoney requests (Jisilu uses bulk fetch)
+            if fund['code'] not in jisilu_data:
+                time.sleep(0.5)
             
         message = self.generate_report(funds_data)
         html_message = self.generate_html_report(funds_data)
